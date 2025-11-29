@@ -129,9 +129,10 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          cp x64/aria2c.exe release/
+          cp x64/aria2c.exe release/aria2c.exe
           cd release && zip aria2-${{ github.event.inputs.version }}-win-64bit.zip aria2c.exe && rm aria2c.exe
-          cp ../x86/aria2c.exe release/
+          cd ..
+          cp x86/aria2c.exe release/aria2c.exe
           cd release && zip aria2-${{ github.event.inputs.version }}-win-32bit.zip aria2c.exe && rm aria2c.exe
 
       - name: Create Release
