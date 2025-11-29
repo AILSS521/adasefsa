@@ -103,7 +103,7 @@ jobs:
           $HOST-strip src/aria2c.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: aria2c-win-${{ matrix.arch }}
           path: src/aria2c.exe
