@@ -1,0 +1,154 @@
+name: Build Windows Release
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'src/**'
+      - '.github/workflows/build-windows.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本标签 (例如: 1.37.0-mod1)'
+        required: false
+        default: '1.37.0-mod1'
+      release:
+        description: '是否创建 Release'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            host: x86_64-w64-mingw32
+          - arch: i686
+            host: i686-w64-mingw32
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            make binutils autoconf automake autotools-dev libtool \
+            patch ca-certificates \
+            pkg-config git curl dpkg-dev gcc-mingw-w64 g++-mingw-w64 \
+            autopoint libcppunit-dev libxml2-dev libgcrypt20-dev lzip \
+            python3-docutils
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: /usr/local/${{ matrix.host }}
+          key: mingw-deps-${{ matrix.host }}-v1
+
+      - name: Download and build dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          curl -L -O https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz
+          curl -L -O https://github.com/libexpat/libexpat/releases/download/R_2_5_0/expat-2.5.0.tar.bz2
+          curl -L -O https://www.sqlite.org/2023/sqlite-autoconf-3430100.tar.gz
+          curl -L -O https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+          curl -L -O https://github.com/c-ares/c-ares/releases/download/cares-1_19_1/c-ares-1.19.1.tar.gz
+          curl -L -O https://libssh2.org/download/libssh2-1.11.0.tar.bz2
+
+          tar xf gmp-6.3.0.tar.xz && cd gmp-6.3.0
+          ./configure --disable-shared --enable-static --prefix=/usr/local/$HOST --host=$HOST --disable-cxx --enable-fat CFLAGS="-mtune=generic -O2 -g0"
+          make -j$(nproc) && sudo make install && cd ..
+
+          tar xf expat-2.5.0.tar.bz2 && cd expat-2.5.0
+          ./configure --disable-shared --enable-static --prefix=/usr/local/$HOST --host=$HOST --build=$(dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+          make -j$(nproc) && sudo make install && cd ..
+
+          tar xf sqlite-autoconf-3430100.tar.gz && cd sqlite-autoconf-3430100
+          ./configure --disable-shared --enable-static --prefix=/usr/local/$HOST --host=$HOST --build=$(dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+          make -j$(nproc) && sudo make install && cd ..
+
+          tar xf zlib-1.3.1.tar.gz && cd zlib-1.3.1
+          CC=$HOST-gcc AR=$HOST-ar LD=$HOST-ld RANLIB=$HOST-ranlib STRIP=$HOST-strip \
+          ./configure --prefix=/usr/local/$HOST --libdir=/usr/local/$HOST/lib --includedir=/usr/local/$HOST/include --static
+          make -j$(nproc) && sudo make install && cd ..
+
+          tar xf c-ares-1.19.1.tar.gz && cd c-ares-1.19.1
+          ./configure --disable-shared --enable-static --without-random --prefix=/usr/local/$HOST --host=$HOST --build=$(dpkg-architecture -qDEB_BUILD_GNU_TYPE) LIBS="-lws2_32"
+          make -j$(nproc) && sudo make install && cd ..
+
+          tar xf libssh2-1.11.0.tar.bz2 && cd libssh2-1.11.0
+          ./configure --disable-shared --enable-static --prefix=/usr/local/$HOST --host=$HOST --build=$(dpkg-architecture -qDEB_BUILD_GNU_TYPE) LIBS="-lws2_32"
+          make -j$(nproc) && sudo make install && cd ..
+
+      - name: Build aria2
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          autoreconf -i
+          ./mingw-config
+          make -j$(nproc)
+          $HOST-strip src/aria2c.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2c-win-${{ matrix.arch }}
+          path: src/aria2c.exe
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true'
+
+    steps:
+      - name: Download 64-bit artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aria2c-win-x86_64
+          path: x64
+
+      - name: Download 32-bit artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aria2c-win-i686
+          path: x86
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          cp x64/aria2c.exe release/
+          cd release && zip aria2-${{ github.event.inputs.version }}-win-64bit.zip aria2c.exe && rm aria2c.exe
+          cp ../x86/aria2c.exe release/
+          cd release && zip aria2-${{ github.event.inputs.version }}-win-32bit.zip aria2c.exe && rm aria2c.exe
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: aria2 v${{ github.event.inputs.version }} (Modified)
+          body: |
+            ## aria2 修改版 v${{ github.event.inputs.version }}
+
+            基于 aria2 官方源码修改
+
+            ### 修改内容
+            - `max-connection-per-server` 限制从 16 提升到 **128**
+
+            ### 下载
+            - `aria2-*-win-64bit.zip` - 64位 Windows 版本
+            - `aria2-*-win-32bit.zip` - 32位 Windows 版本
+          draft: false
+          prerelease: false
+          files: release/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
