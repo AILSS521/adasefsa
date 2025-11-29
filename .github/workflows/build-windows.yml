@@ -103,7 +103,7 @@ jobs:
           $HOST-strip src/aria2c.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: aria2c-win-${{ matrix.arch }}
           path: src/aria2c.exe
@@ -115,13 +115,13 @@ jobs:
 
     steps:
       - name: Download 64-bit artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.3
         with:
           name: aria2c-win-x86_64
           path: x64
 
       - name: Download 32-bit artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.3
         with:
           name: aria2c-win-i686
           path: x86
@@ -135,7 +135,7 @@ jobs:
           cd release && zip aria2-${{ github.event.inputs.version }}-win-32bit.zip aria2c.exe && rm aria2c.exe
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.event.inputs.version }}
           name: aria2 v${{ github.event.inputs.version }} (Modified)
