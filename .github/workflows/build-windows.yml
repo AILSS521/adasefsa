@@ -1,11 +1,6 @@
 name: Build Windows Release
 
 on:
-  push:
-    branches: [master, main]
-    paths:
-      - 'src/**'
-      - '.github/workflows/build-windows.yml'
   workflow_dispatch:
     inputs:
       version:
